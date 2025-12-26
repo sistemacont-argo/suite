@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistema Argo</title>
+    <!-- Cargar Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Cargar React y ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Cargar Babel para procesar JSX en el navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        #accounting-app-root {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent; /* Quitar destello azul al tocar en móviles */
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .input-transition { transition: all 0.2s ease-in-out; }
+        .input-transition:focus { transform: translateY(-1px); }
+        
+        /* Animación de entrada */
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-down { animation: slideDown 0.3s ease-out; }
+        
+        /* Mejoras para inputs en móvil */
+        input, select, textarea {
+            font-size: 16px !important; /* Evita zoom automático en iOS */
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+
+    <div id="accounting-app-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- SEGURIDAD ---
+        document.addEventListener('contextmenu', event => event.preventDefault());
+
+        // --- CONSTANTES ---
+        const CATEGORIAS = {
+            venta: ["Venta de Productos", "Servicios Profesionales", "Consultoría", "Otros Ingresos"],
+            compra: ["Mercadería", "Materia Prima", "Equipos", "Insumos", "Software/Licencias"],
+            gasto: ["Alquiler de Local", "Servicios (Luz/Agua/Internet)", "Nómina/Sueldos", "Publicidad/Marketing", "Transporte", "Impuestos", "Mantenimiento"]
+        };
+        const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+        // --- ÍCONOS ---
+        const Icons = {
+            LayoutDashboard: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>,
+            PlusCircle: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>,
+            History: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/><path d="M12 7v5l4 2"/></svg>,
+            TrendingUp: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+            TrendingDown: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>,
+            ShoppingCart: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>,
+            Trash2: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
+            PieChart: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>,
+            Wallet: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
+            LogOut: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
+            Lock: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+            Package: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 9.4-9-5.19"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" x2="12" y1="22.08" y2="12"/></svg>,
+            Users: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+            Truck: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4"/><path d="M20 17h2v-2a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2h2"/><path d="M14 17h6"/><path d="M4 17h6"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M14 7h8l-2 5h-6z"/><path d="M2 12h12V2H2z"/></svg>,
+            ClipboardList: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>,
+            FileText: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>,
+            Search: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>,
+            Save: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+            Shield: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+            Calculator: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>,
+            X: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+            Filter: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
+            AlertTriangle: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+            CreditCard: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>,
+            Award: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>,
+            Edit: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+            Key: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>,
+            Settings: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.35a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+            Download: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+            RefreshCw: ({ size = 20 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+        };
+
+        // --- LOGIN ---
+        function LoginScreen({ onLogin }) {
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            
+            // Estado para el modo de recuperación de contraseña
+            const [isResetMode, setIsResetMode] = useState(false);
+            const [recoveryKey, setRecoveryKey] = useState('');
+            const [newPassword, setNewPassword] = useState('');
+            const [confirmPassword, setConfirmPassword] = useState('');
+            const [successMsg, setSuccessMsg] = useState('');
+
+            // Cargar credenciales guardadas o usar las predeterminadas
+            const [storedCreds, setStoredCreds] = useState(() => {
+                const saved = localStorage.getItem('authCreds');
+                return saved ? JSON.parse(saved) : { username: 'Adminargo', password: 'Argo1903@', recoveryCode: 'Md5ch3cksuM' };
+            });
+
+            // Guardar cambios en credenciales
+            useEffect(() => {
+                localStorage.setItem('authCreds', JSON.stringify(storedCreds));
+            }, [storedCreds]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (username === storedCreds.username && password === storedCreds.password) {
+                    onLogin();
+                } else { 
+                    setError('Acceso denegado. Verifica usuario y contraseña.'); 
+                    setPassword(''); 
+                }
+            };
+
+            const handleResetPassword = (e) => {
+                e.preventDefault();
+                if (recoveryKey !== storedCreds.recoveryCode) {
+                    setError('Clave de recuperación incorrecta.');
+                    return;
+                }
+                if (newPassword.length < 4) {
+                    setError('La nueva contraseña es muy corta.');
+                    return;
+                }
+                if (newPassword !== confirmPassword) {
+                    setError('Las contraseñas no coinciden.');
+                    return;
+                }
+
+                // Actualizar contraseña
+                setStoredCreds(prev => ({ ...prev, password: newPassword }));
+                setSuccessMsg('Contraseña actualizada correctamente. Inicia sesión.');
+                setError('');
+                // Reset form state
+                setTimeout(() => {
+                    setIsResetMode(false);
+                    setSuccessMsg('');
+                    setRecoveryKey('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                }, 2000);
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm">
+                        <div className="text-center mb-8">
+                            <div className="mb-4">
+                                <img src="https://res.cloudinary.com/dw6z3wlzq/image/upload/v1766721199/actividad_uo751j.png" alt="Logo" className="w-20 h-20 mx-auto rounded-xl shadow-lg" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-slate-800">Sistema Argo</h2>
+                            <p className="text-slate-500 text-sm mt-1">
+                                {isResetMode ? 'Recuperar Acceso' : 'Ingresa tus credenciales'}
+                            </p>
+                        </div>
+
+                        {successMsg ? (
+                            <div className="p-4 bg-green-50 text-green-600 rounded-xl text-center mb-4 text-sm font-bold animate-pulse">
+                                {successMsg}
+                            </div>
+                        ) : (
+                            <>
+                                {isResetMode ? (
+                                    <form onSubmit={handleResetPassword} className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Clave de Recuperación</label>
+                                            <input type="text" value={recoveryKey} onChange={(e) => setRecoveryKey(e.target.value)} className="w-full rounded-xl border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder="Código maestro" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Nueva Contraseña</label>
+                                            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-xl border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Confirmar Contraseña</label>
+                                            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full rounded-xl border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                                        </div>
+                                        {error && <div className="p-3 bg-red-50 text-red-500 text-sm rounded-xl font-medium text-center">{error}</div>}
+                                        <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-200 transition-all active:scale-95 mt-2">Cambiar Contraseña</button>
+                                        <button type="button" onClick={() => { setIsResetMode(false); setError(''); }} className="w-full text-slate-400 hover:text-slate-600 text-sm py-2">Cancelar</button>
+                                    </form>
+                                ) : (
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Usuario</label>
+                                            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full rounded-xl border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Contraseña</label>
+                                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-xl border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                                        </div>
+                                        {error && <div className="p-3 bg-red-50 text-red-500 text-sm rounded-xl font-medium text-center">{error}</div>}
+                                        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95 mt-2">Ingresar</button>
+                                        
+                                        <div className="text-center pt-2">
+                                            <button type="button" onClick={() => { setIsResetMode(true); setError(''); }} className="text-xs text-blue-500 hover:text-blue-700 font-medium">¿Olvidaste tu contraseña?</button>
+                                        </div>
+                                    </form>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- APP PRINCIPAL ---
+        function App() {
+            const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('isAuth') === 'true');
+            const [activeTab, setActiveTab] = useState('dashboard');
+            
+            // --- ESTADOS DE DATOS ---
+            const [transactions, setTransactions] = useState(() => JSON.parse(localStorage.getItem('accountingData')) || []);
+            const [products, setProducts] = useState(() => JSON.parse(localStorage.getItem('accountingProducts')) || [
+                {id: 1, code: 'P001', name: 'Ejemplo Producto', price: 100, cost: 80}
+            ]);
+            const [clients, setClients] = useState(() => JSON.parse(localStorage.getItem('accountingClients')) || []);
+            const [suppliers, setSuppliers] = useState(() => JSON.parse(localStorage.getItem('accountingSuppliers')) || [
+                {id: 1, name: 'Proveedor Ejemplo', ruc: '20123456789', contact: 'ventas@ejemplo.com'}
+            ]);
+            const [shoppingItems, setShoppingItems] = useState(() => JSON.parse(localStorage.getItem('accountingShoppingItems')) || []);
+
+            // Estado para Edición
+            const [editingClient, setEditingClient] = useState(null);
+
+            // Filtros Historial
+            const [historyFilter, setHistoryFilter] = useState({ term: '', type: 'all' });
+
+            // PERSISTENCIA
+            useEffect(() => localStorage.setItem('accountingData', JSON.stringify(transactions)), [transactions]);
+            useEffect(() => localStorage.setItem('accountingProducts', JSON.stringify(products)), [products]);
+            useEffect(() => localStorage.setItem('accountingClients', JSON.stringify(clients)), [clients]);
+            useEffect(() => localStorage.setItem('accountingSuppliers', JSON.stringify(suppliers)), [suppliers]);
+            useEffect(() => localStorage.setItem('accountingShoppingItems', JSON.stringify(shoppingItems)), [shoppingItems]);
+
+            const handleLogin = () => { setIsAuthenticated(true); sessionStorage.setItem('isAuth', 'true'); };
+            const handleLogout = () => { setIsAuthenticated(false); sessionStorage.removeItem('isAuth'); setActiveTab('dashboard'); };
+
+            // CRUD Genérico
+            const addData = (setter, itemOrItems) => {
+                setter(prevData => {
+                    if (Array.isArray(itemOrItems)) {
+                        const newItems = itemOrItems.map((item, idx) => ({ ...item, id: Date.now() + idx }));
+                        return [...newItems, ...prevData];
+                    } else {
+                        return [{...itemOrItems, id: Date.now()}, ...prevData];
+                    }
+                });
+            };
+            const deleteData = (setter, prev, id) => { if(window.confirm('¿Eliminar?')) setter(prev.filter(i => i.id !== id)); };
+
+            // FUNCIONES DE CIERRE ANUAL Y BACKUP
+            const exportData = () => {
+                const data = {
+                    transactions,
+                    products,
+                    clients,
+                    suppliers,
+                    shoppingItems,
+                    exportDate: new Date().toISOString()
+                };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", `respaldo_argo_${new Date().getFullYear()}.json`);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            };
+
+            const performAnnualClosing = () => {
+                if(!window.confirm("¿ESTÁS SEGURO? Se descargará una copia y se borrarán todos los movimientos actuales. Esta acción no se puede deshacer.")) return;
+
+                // 1. Exportar Backup
+                exportData();
+
+                // 2. Calcular Balance Final
+                const totalIncome = transactions.filter(t => t.type === 'venta').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+                const totalExpenses = transactions.filter(t => t.type === 'compra' || t.type === 'gasto').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+                const finalBalance = totalIncome - totalExpenses;
+
+                // 3. Crear Asiento de Apertura
+                const openingEntry = {
+                    id: Date.now(),
+                    type: 'venta', // Ingreso inicial
+                    category: 'Otros Ingresos',
+                    description: `Saldo Inicial ${new Date().getFullYear() + 1}`,
+                    amount: finalBalance > 0 ? finalBalance : 0, // Si es negativo, podría ser gasto, pero simplificamos a 0 o ingreso positivo
+                    date: new Date().toISOString().split('T')[0],
+                    client: 'Balance Anterior',
+                    paymentStatus: 'pagado',
+                    quantity: 1,
+                    unitPrice: finalBalance > 0 ? finalBalance : 0
+                };
+
+                // 4. Resetear Transacciones
+                setTransactions([openingEntry]);
+                alert("Año cerrado exitosamente. Se ha generado el Saldo Inicial.");
+                setActiveTab('history');
+            };
+
+
+            // EDITAR CLIENTE
+            const handleUpdateClient = (updatedClient) => {
+                // Mantiene el ID original, actualiza el resto
+                setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+                setEditingClient(null); // Salir modo edición
+                alert("Cliente actualizado correctamente");
+            };
+
+            // HELPERS
+            const registerNewClient = (clientData) => {
+                const newClient = { ...clientData, id: Date.now() };
+                setClients(prev => [...prev, newClient]);
+                return newClient;
+            };
+
+            const registerNewSupplier = (supplierData) => {
+                const newSupplier = { ...supplierData, id: Date.now() };
+                setSuppliers(prev => [...prev, newSupplier]);
+                return newSupplier;
+            };
+
+            const updateProductPrice = (productId, newSellingPrice, newCostPrice) => {
+                setProducts(prev => prev.map(p => 
+                    p.id === productId ? { 
+                        ...p, 
+                        price: parseFloat(newSellingPrice),
+                        cost: parseFloat(newCostPrice)
+                    } : p
+                ));
+            };
+
+            const registerNewProduct = (productData) => {
+                const newProduct = { ...productData, id: Date.now() };
+                setProducts(prev => [...prev, newProduct]);
+                return newProduct;
+            };
+
+            const calculateStockForProduct = (productId) => {
+                let stock = 0;
+                transactions.forEach(t => {
+                    if (t.productId === productId) {
+                        if (t.type === 'compra') stock += (parseFloat(t.quantity) || 0);
+                        if (t.type === 'venta') stock -= (parseFloat(t.quantity) || 0);
+                    }
+                });
+                return stock;
+            };
+
+            // Filtrado de transacciones
+            const filteredTransactions = useMemo(() => {
+                return transactions.filter(t => {
+                    const matchesTerm = (t.description || '').toLowerCase().includes(historyFilter.term.toLowerCase()) ||
+                                        (t.client || '').toLowerCase().includes(historyFilter.term.toLowerCase()) ||
+                                        (t.invoice || '').toLowerCase().includes(historyFilter.term.toLowerCase()) ||
+                                        (t.rucInput || '').includes(historyFilter.term);
+                    const matchesType = historyFilter.type === 'all' || t.type === historyFilter.type;
+                    return matchesTerm && matchesType;
+                });
+            }, [transactions, historyFilter]);
+
+            // CÁLCULOS AVANZADOS DASHBOARD
+            const { totals, balance, accountsReceivable, accountsPayable, topProducts, avgMargin, stockAlerts, monthlyComparison, monthlyStats, maxMonthVal } = useMemo(() => {
+                const today = new Date();
+                const currentMonth = today.getMonth();
+                const currentYear = today.getFullYear();
+                const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+                const prevMonth = prevMonthDate.getMonth();
+                const prevYear = prevMonthDate.getFullYear();
+
+                let salesCurrentMonth = 0;
+                let salesPrevMonth = 0;
+                let totalMargin = 0;
+                let marginCount = 0;
+                const productSales = {};
+                
+                // Array para estadísticas mensuales (0-11)
+                const mStats = Array(12).fill(0).map((_, i) => ({ month: i, ventas: 0, egresos: 0 }));
+
+                const acc = transactions.reduce((acc, curr) => {
+                    // Procesar mes para el gráfico
+                    if (curr.date) {
+                        // Asegurar interpretación correcta de la fecha localmente (evitar desfase horario)
+                        const [y, m, d] = curr.date.split('-').map(Number);
+                        // Solo procesar si es del año actual
+                        if (y === currentYear) {
+                            const mIndex = m - 1; // 0-11
+                            const amount = parseFloat(curr.amount) || 0;
+                            
+                            if (curr.type === 'venta') {
+                                mStats[mIndex].ventas += amount;
+                            } else {
+                                mStats[mIndex].egresos += amount;
+                            }
+                        }
+                    }
+
+                    // Totales Generales
+                    if (curr.type === 'venta') {
+                        acc.ventas += curr.amount;
+                        if (curr.paymentStatus === 'pendiente') acc.porCobrar += curr.amount;
+                        
+                        // Top Products
+                        if (curr.productId) {
+                            if (!productSales[curr.productId]) productSales[curr.productId] = { name: curr.description, total: 0, qty: 0 };
+                            productSales[curr.productId].total += curr.amount;
+                            productSales[curr.productId].qty += (parseFloat(curr.quantity) || 0);
+                        }
+                    } else if (curr.type === 'compra') {
+                        acc.compras += curr.amount;
+                        if (curr.paymentStatus === 'pendiente') acc.porPagar += curr.amount;
+                    } else if (curr.type === 'gasto') {
+                        acc.gastos += curr.amount;
+                        if (curr.paymentStatus === 'pendiente') acc.porPagar += curr.amount;
+                    }
+
+                    // Comparativa Mensual
+                    const tDate = new Date(curr.date);
+                    // Nota: tDate desde string "YYYY-MM-DD" puede interpretarse UTC. 
+                    // Mejor usar split como arriba para consistencia, pero para este KPI simple usaremos Date.
+                    // Ajuste simple:
+                    const [y, m] = curr.date.split('-').map(Number);
+                    if (curr.type === 'venta') {
+                        if (m - 1 === currentMonth && y === currentYear) salesCurrentMonth += curr.amount;
+                        if (m - 1 === prevMonth && y === prevYear) salesPrevMonth += curr.amount;
+                    }
+
+                    return acc;
+                }, { ventas: 0, compras: 0, gastos: 0, porCobrar: 0, porPagar: 0 });
+
+                // Calcular máximo valor mensual para escalar gráfico
+                const maxMVal = Math.max(...mStats.map(s => Math.max(s.ventas, s.egresos))) || 1;
+
+                // Procesar Top Products
+                const sortedProducts = Object.values(productSales).sort((a, b) => b.total - a.total).slice(0, 5);
+
+                // Procesar Alertas Stock (Lógica: >1 y <3, asumimos 1 < stock <= 3, máx 4 productos)
+                const alerts = products
+                    .map(p => ({ ...p, currentStock: calculateStockForProduct(p.id) }))
+                    .filter(p => p.currentStock >= 1.01 && p.currentStock <= 3) 
+                    .slice(0, 4);
+
+                // Procesar Margen Promedio Global (Estimado)
+                let totalCostOfSales = 0;
+                transactions.filter(t => t.type === 'venta').forEach(t => {
+                     const p = products.find(prod => prod.id === t.productId);
+                     if(p && p.cost) totalCostOfSales += (t.quantity * p.cost);
+                });
+                const globalMargin = acc.ventas > 0 ? ((acc.ventas - totalCostOfSales) / acc.ventas) * 100 : 0;
+
+                // Variación Mensual
+                let variation = 0;
+                if (salesPrevMonth > 0) variation = ((salesCurrentMonth - salesPrevMonth) / salesPrevMonth) * 100;
+                else if (salesCurrentMonth > 0) variation = 100;
+
+                return { 
+                    totals: acc, 
+                    balance: acc.ventas - (acc.compras + acc.gastos),
+                    accountsReceivable: acc.porCobrar,
+                    accountsPayable: acc.porPagar,
+                    topProducts: sortedProducts,
+                    stockAlerts: alerts,
+                    avgMargin: globalMargin,
+                    monthlyComparison: variation,
+                    monthlyStats: mStats,
+                    maxMonthVal: maxMVal
+                };
+            }, [transactions, products]);
+
+            const formatMoney = (amount) => new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(amount);
+
+            if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 sm:pb-4">
+                    {/* Header Navegación */}
+                    <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between py-3 gap-3">
+                                <div className="flex items-center gap-3">
+                                    <img src="https://res.cloudinary.com/dw6z3wlzq/image/upload/v1766721199/actividad_uo751j.png" alt="Logo" className="w-10 h-10 rounded-lg shadow-sm" />
+                                    <span className="font-bold text-xl tracking-tight text-slate-800">Sistema <span className="text-blue-600">Argo</span></span>
+                                </div>
+                                <div className="w-full sm:w-auto overflow-x-auto hide-scrollbar">
+                                    <div className="flex gap-1 min-w-max pb-1 sm:pb-0">
+                                        <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Icons.LayoutDashboard />} label="Inicio" />
+                                        <NavButton active={activeTab === 'new'} onClick={() => setActiveTab('new')} icon={<Icons.PlusCircle />} label="Registrar" />
+                                        <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<Icons.History />} label="Historial" />
+                                        <div className="w-px bg-slate-200 mx-1"></div>
+                                        <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<Icons.Package />} label="Productos" />
+                                        <NavButton active={activeTab === 'clients'} onClick={() => setActiveTab('clients')} icon={<Icons.Users />} label="Clientes" />
+                                        <div className="w-px bg-slate-200 mx-1"></div>
+                                        <NavButton active={activeTab === 'shopping'} onClick={() => setActiveTab('shopping')} icon={<Icons.ClipboardList />} label="Gastos" />
+                                        <NavButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Icons.Truck />} label="Proveedores" />
+                                        <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Icons.Settings />} label="Config" />
+                                        <button onClick={handleLogout} className="p-2 ml-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icons.LogOut /></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <main className="max-w-7xl mx-auto p-4">
+                        {/* DASHBOARD */}
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-6 animate-fade-in">
+                                {/* Fila 1: KPIs Principales */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-28 relative overflow-hidden">
+                                        <div><p className="text-xs font-bold text-slate-400 uppercase">Balance Neto</p><h3 className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{formatMoney(balance)}</h3></div>
+                                        <div className="absolute right-4 bottom-4 opacity-10"><Icons.Wallet size={48}/></div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-28">
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-400 uppercase flex justify-between">Ventas <span className={`text-[10px] ${monthlyComparison >= 0 ? 'text-green-500' : 'text-red-500'}`}>{monthlyComparison > 0 ? '+' : ''}{monthlyComparison.toFixed(0)}% vs mes ant.</span></p>
+                                            <h3 className="text-2xl font-bold text-green-600">{formatMoney(totals.ventas)}</h3>
+                                        </div>
+                                        <div className="w-full bg-green-100 h-1.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: '100%'}}></div></div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-28">
+                                        <div><p className="text-xs font-bold text-slate-400 uppercase">Margen Promedio</p><h3 className="text-2xl font-bold text-slate-700">{avgMargin.toFixed(1)}%</h3></div>
+                                        <div className="text-xs text-slate-400">Rentabilidad Global</div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-28">
+                                        <div><p className="text-xs font-bold text-slate-400 uppercase">Egresos (C+G)</p><h3 className="text-2xl font-bold text-red-500">{formatMoney(totals.compras + totals.gastos)}</h3></div>
+                                        <div className="w-full bg-red-100 h-1.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full" style={{width: '100%'}}></div></div>
+                                    </div>
+                                </div>
+
+                                {/* EVOLUCIÓN MENSUAL GRÁFICO (NUEVO) */}
+                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><Icons.PieChart size={18} className="text-blue-600"/> Evolución Anual {new Date().getFullYear()}</h3>
+                                        <div className="flex gap-4 text-xs font-bold">
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-green-500 rounded-sm"></div> Ventas</div>
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded-sm"></div> Egresos</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="h-48 w-full flex items-end justify-between gap-1 sm:gap-2">
+                                        {monthlyStats.map((stat, i) => (
+                                            <div key={i} className="flex flex-col items-center flex-1 h-full justify-end group relative">
+                                                {/* Tooltip */}
+                                                <div className="absolute bottom-full mb-2 hidden group-hover:block z-10 bg-slate-800 text-white text-xs rounded p-2 whitespace-nowrap shadow-lg">
+                                                    <div>{MESES[i]}</div>
+                                                    <div className="text-green-300">V: {formatMoney(stat.ventas)}</div>
+                                                    <div className="text-red-300">E: {formatMoney(stat.egresos)}</div>
+                                                </div>
+                                                
+                                                <div className="w-full flex justify-center items-end gap-0.5 sm:gap-1 h-full">
+                                                    <div className="w-2 sm:w-4 bg-green-500 rounded-t-sm transition-all duration-500 hover:bg-green-600" 
+                                                         style={{height: `${(stat.ventas / maxMonthVal) * 100}%`}}></div>
+                                                    <div className="w-2 sm:w-4 bg-red-500 rounded-t-sm transition-all duration-500 hover:bg-red-600" 
+                                                         style={{height: `${(stat.egresos / maxMonthVal) * 100}%`}}></div>
+                                                </div>
+                                                <div className="text-[10px] text-slate-400 mt-2 font-bold">{MESES[i]}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Fila 3: Créditos y Alertas */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Cuentas y Top Products */}
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                                                <div className="flex items-center gap-2 mb-1 text-indigo-800 font-bold text-sm"><Icons.Users size={16}/> Por Cobrar</div>
+                                                <div className="text-xl font-bold text-indigo-600">{formatMoney(accountsReceivable)}</div>
+                                            </div>
+                                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
+                                                <div className="flex items-center gap-2 mb-1 text-orange-800 font-bold text-sm"><Icons.Truck size={16}/> Por Pagar</div>
+                                                <div className="text-xl font-bold text-orange-600">{formatMoney(accountsPayable)}</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-sm uppercase"><Icons.Award size={18} className="text-yellow-500"/> Top 5 Productos</h3>
+                                            <div className="space-y-3">
+                                                {topProducts.length === 0 ? <p className="text-sm text-slate-400 italic">Sin ventas registradas</p> : 
+                                                topProducts.map((p, i) => (
+                                                    <div key={i} className="flex justify-between items-center text-sm border-b border-slate-50 pb-2 last:border-0">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="bg-slate-100 text-slate-500 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold">{i+1}</span>
+                                                            <span className="font-medium text-slate-700">{p.name}</span>
+                                                        </div>
+                                                        <span className="font-bold text-slate-600">{formatMoney(p.total)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Alertas de Stock y Gráfico */}
+                                    <div className="space-y-4">
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 h-full">
+                                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-sm uppercase"><Icons.AlertTriangle size={18} className="text-amber-500"/> Alertas Stock Bajo (1-3 und)</h3>
+                                            {stockAlerts.length === 0 ? (
+                                                <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100 text-green-600 text-sm">
+                                                    Todo en orden. No hay stock crítico.
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    {stockAlerts.map(p => (
+                                                        <div key={p.id} className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex justify-between items-center">
+                                                            <div className="overflow-hidden">
+                                                                <div className="text-xs text-amber-700 font-mono">{p.code}</div>
+                                                                <div className="font-bold text-amber-900 text-sm truncate">{p.name}</div>
+                                                            </div>
+                                                            <div className="bg-white px-2 py-1 rounded-lg text-amber-600 font-bold text-sm shadow-sm">
+                                                                {p.currentStock} und
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* REGISTRAR MOVIMIENTO */}
+                        {activeTab === 'new' && (
+                            <div className="max-w-4xl mx-auto animate-fade-in">
+                                <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-100">
+                                    <div className="text-center mb-8">
+                                        <div className="bg-blue-50 p-3 rounded-full inline-flex mb-3"><Icons.PlusCircle className="text-blue-600 w-8 h-8" /></div>
+                                        <h2 className="text-xl font-bold text-slate-800">Registrar Operación</h2>
+                                    </div>
+                                    <TransactionForm 
+                                        onSubmit={(data) => { 
+                                            // Corrección: Usamos addData con 2 argumentos (setter y data)
+                                            addData(setTransactions, data); 
+                                            if (Array.isArray(data) && data[0]?.type === 'compra') {
+                                                data.forEach(item => {
+                                                    if (item.productId && item.sellingPrice) {
+                                                        // Fix: Use item.unitPrice which holds the cost from the normalized object
+                                                        updateProductPrice(item.productId, item.sellingPrice, item.unitPrice);
+                                                    }
+                                                });
+                                            } else if (data.type === 'compra' && data.productId && data.sellingPrice) {
+                                                updateProductPrice(data.productId, data.sellingPrice, data.unitPrice);
+                                            }
+                                            alert('Registrado con éxito!'); 
+                                            setActiveTab('history'); 
+                                        }} 
+                                        products={products} 
+                                        clients={clients}
+                                        suppliers={suppliers}
+                                        shoppingItems={shoppingItems}
+                                        onRegisterClient={registerNewClient}
+                                        onRegisterSupplier={registerNewSupplier}
+                                        onRegisterProduct={registerNewProduct}
+                                        transactions={transactions}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* HISTORIAL AVANZADO CON FILTROS */}
+                        {activeTab === 'history' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <Icons.History size={20} className="text-blue-600" />
+                                        Historial de Movimientos
+                                    </h2>
+                                    
+                                    {/* BARRA DE FILTROS */}
+                                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto bg-white p-2 rounded-xl shadow-sm border border-slate-200">
+                                        <div className="relative">
+                                            <input 
+                                                type="text" 
+                                                className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 w-full sm:w-64" 
+                                                placeholder="Buscar producto, proveedor..." 
+                                                value={historyFilter.term}
+                                                onChange={(e) => setHistoryFilter({...historyFilter, term: e.target.value})}
+                                            />
+                                            <div className="absolute left-3 top-2.5 text-slate-400"><Icons.Search size={16}/></div>
+                                        </div>
+                                        <select 
+                                            className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 font-medium text-slate-600"
+                                            value={historyFilter.type}
+                                            onChange={(e) => setHistoryFilter({...historyFilter, type: e.target.value})}
+                                        >
+                                            <option value="all">Todos los Tipos</option>
+                                            <option value="compra">📦 Solo Compras (Costos)</option>
+                                            <option value="venta">💰 Solo Ventas</option>
+                                            <option value="gasto">🧾 Gastos</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                    <TransactionTable transactions={filteredTransactions} formatMoney={formatMoney} onDelete={(id) => deleteData(setTransactions, transactions, id)} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* GESTIÓN: PRODUCTOS */}
+                        {activeTab === 'products' && (
+                            <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+                                <div className="lg:col-span-1">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
+                                        <h3 className="font-bold mb-4 flex items-center gap-2"><Icons.Package size={18} /> Nuevo Producto</h3>
+                                        <SimpleForm 
+                                            fields={[
+                                                {name: 'code', label: 'Código (Ej: P001)', type: 'text'},
+                                                {name: 'name', label: 'Nombre', type: 'text'}
+                                            ]}
+                                            onSubmit={(d) => addData(setProducts, { ...d, price: 0, cost: 0 })} 
+                                            btnLabel="Guardar Producto"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-2">
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <ProductTable 
+                                            products={products} 
+                                            transactions={transactions}
+                                            calculateStock={calculateStockForProduct} 
+                                            formatMoney={formatMoney} 
+                                            onDelete={(id) => deleteData(setProducts, products, id)} 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* GESTIÓN: CLIENTES */}
+                        {activeTab === 'clients' && (
+                            <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+                                <div className="lg:col-span-1">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
+                                        <h3 className="font-bold mb-4 flex items-center gap-2"><Icons.Users size={18} /> 
+                                            {editingClient ? 'Editar Cliente' : 'Nuevo Cliente'}
+                                        </h3>
+                                        <SimpleForm 
+                                            fields={[{name: 'name', label: 'Razón Social', type: 'text'}, {name: 'ruc', label: 'RUC/DNI', type: 'text'}, {name: 'contact', label: 'Contacto', type: 'text'}]}
+                                            onSubmit={editingClient ? handleUpdateClient : (d) => addData(setClients, d)} 
+                                            btnLabel={editingClient ? 'Actualizar Cliente' : 'Guardar Cliente'}
+                                            initialData={editingClient}
+                                            onCancel={() => setEditingClient(null)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-2">
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <ContactTable 
+                                            data={clients} 
+                                            onDelete={(id) => deleteData(setClients, clients, id)}
+                                            onEdit={(client) => setEditingClient(client)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* GESTIÓN: PROVEEDORES */}
+                        {activeTab === 'suppliers' && (
+                            <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+                                <div className="lg:col-span-1">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
+                                        <h3 className="font-bold mb-4 flex items-center gap-2 text-orange-700"><Icons.Truck size={18} /> Nuevo Proveedor</h3>
+                                        <SimpleForm 
+                                            fields={[{name: 'ruc', label: 'RUC', type: 'text'}, {name: 'name', label: 'Empresa Proveedora', type: 'text'}, {name: 'contact', label: 'Tel/Email', type: 'text'}]}
+                                            onSubmit={(d) => addData(setSuppliers, d)} 
+                                            btnLabel="Guardar Proveedor"
+                                            btnColor="bg-orange-600 hover:bg-orange-700"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-2">
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <ContactTable data={suppliers} onDelete={(id) => deleteData(setSuppliers, suppliers, id)} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                         {/* GESTIÓN: GASTOS (SHOPPING LIST) */}
+                         {activeTab === 'shopping' && (
+                            <div className="grid lg:grid-cols-3 gap-6 animate-fade-in">
+                                <div className="lg:col-span-1">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-24">
+                                        <h3 className="font-bold mb-4 flex items-center gap-2 text-red-700"><Icons.ClipboardList size={18} /> Item de Gasto</h3>
+                                        <SimpleForm 
+                                            fields={[{name: 'name', label: 'Concepto (Ej: Luz)', type: 'text'}, {name: 'price', label: 'Costo Aprox', type: 'number'}]}
+                                            onSubmit={(d) => addData(setShoppingItems, d)} 
+                                            btnLabel="Guardar Concepto"
+                                            btnColor="bg-red-600 hover:bg-red-700"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-2">
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <SimpleTable data={shoppingItems} columns={['-', 'Concepto', 'Costo']} formatMoney={formatMoney} onDelete={(id) => deleteData(setShoppingItems, shoppingItems, id)} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- SUBCOMPONENTES ---
+
+        function NavButton({ active, onClick, icon, label }) {
+            return (
+                <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${active ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200'}`}>
+                    {icon} <span>{label}</span>
+                </button>
+            );
+        }
+
+        function StatCard({ title, amount, icon, type, color, formatMoney }) {
+            const isBalance = type === 'balance';
+            const displayColor = isBalance ? (amount >= 0 ? 'text-blue-600' : 'text-red-500') : (color || 'text-slate-800');
+            return (
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between h-24">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{title}</p>
+                            <h3 className={`text-xl font-bold ${displayColor}`}>{formatMoney(amount)}</h3>
+                        </div>
+                        <div className={`p-2 rounded-xl ${isBalance ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-500'}`}>{icon}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        function BarVisual({ label, amount, total, color, formatMoney }) {
+            const percentage = total > 0 ? (amount / total) * 100 : 0;
+            return (
+                <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                        <span className="font-bold text-slate-600">{label}</span>
+                        <span className="text-slate-400 font-medium">{formatMoney(amount)} ({percentage.toFixed(0)}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                        <div className={`h-2.5 rounded-full transition-all duration-500 ${color}`} style={{ width: `${percentage}%` }}></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- COMPONENTE DE FORMULARIO TRANSACCIONAL (CORE) ---
+        function TransactionForm({ onSubmit, products, clients, suppliers, shoppingItems, onRegisterClient, onRegisterSupplier, onRegisterProduct, transactions }) {
+            const [formData, setFormData] = useState({ 
+                type: 'venta', 
+                category: CATEGORIAS.venta[0], 
+                description: '', amount: '', client: '', invoice: '', quantity: 1, unitPrice: 0, subtotal: 0, tax: 0,
+                rucInput: '', codeInput: '', productId: null,
+                date: new Date().toISOString().split('T')[0],
+                linkedInvoice: '', linkedSupplier: '',
+                paymentStatus: 'pagado'
+            });
+            
+            // Estado para lista de items en compras múltiples
+            const [purchaseItems, setPurchaseItems] = useState([]);
+            
+            const [stockDisplay, setStockDisplay] = useState(null);
+            const [isNewEntity, setIsNewEntity] = useState(false);
+            const [purchaseBatches, setPurchaseBatches] = useState([]);
+            const [referenceCost, setReferenceCost] = useState(0); 
+            
+            const handleTypeChange = (e) => {
+                const newType = e.target.value;
+                setFormData({ 
+                    ...formData, type: newType, category: CATEGORIAS[newType][0],
+                    client: '', description: '', amount: '', unitPrice: 0, quantity: 1, subtotal: 0, tax: 0,
+                    rucInput: '', codeInput: '', productId: null, linkedInvoice: '', linkedSupplier: '', paymentStatus: 'pagado'
+                });
+                setStockDisplay(null);
+                setIsNewEntity(false);
+                setPurchaseBatches([]);
+                setPurchaseItems([]); 
+                setReferenceCost(0);
+            };
+
+            // ---- LÓGICA DE COMPRA MULTI-ITEM ----
+            const addPurchaseItem = () => {
+                setPurchaseItems([...purchaseItems, {
+                    id: Date.now(),
+                    code: '', description: '', quantity: 1, unitCost: 0, margin: 30, sellingPrice: 0, subtotal: 0, productId: null
+                }]);
+            };
+
+            const removePurchaseItem = (id) => {
+                setPurchaseItems(purchaseItems.filter(item => item.id !== id));
+            };
+
+            const updatePurchaseItem = (id, field, value) => {
+                setPurchaseItems(purchaseItems.map(item => {
+                    if (item.id === id) {
+                        const updatedItem = { ...item, [field]: value };
+                        
+                        // Si cambiamos Código, buscar producto
+                        if (field === 'code') {
+                            const found = products.find(p => p.code.toLowerCase() === value.toLowerCase());
+                            if (found) {
+                                updatedItem.description = found.name;
+                                updatedItem.productId = found.id;
+                                if(found.cost) updatedItem.unitCost = found.cost;
+                            } else {
+                                updatedItem.productId = null; // Important: reset if not found by code
+                            }
+                        }
+
+                        // Si cambiamos Descripción (Nombre), buscar producto
+                        if (field === 'description') {
+                            const found = products.find(p => p.name.toLowerCase() === value.toLowerCase());
+                            if (found) {
+                                updatedItem.code = found.code;
+                                updatedItem.productId = found.id;
+                                if(found.cost) updatedItem.unitCost = found.cost;
+                            }
+                        }
+
+                        // Cálculos automáticos de fila
+                        // 1. Subtotal de Compra
+                        const qty = parseFloat(field === 'quantity' ? value : item.quantity) || 0;
+                        const cost = parseFloat(field === 'unitCost' ? value : item.unitCost) || 0;
+                        updatedItem.subtotal = qty * cost;
+
+                        // 2. Precio de Venta Sugerido (Cost + Margin)
+                        const margin = parseFloat(field === 'margin' ? value : item.margin) || 0;
+                        updatedItem.sellingPrice = cost * (1 + (margin / 100));
+
+                        return updatedItem;
+                    }
+                    return item;
+                }));
+            };
+
+            const calculatePurchaseTotal = () => {
+                return purchaseItems.reduce((sum, item) => sum + item.subtotal, 0);
+            };
+
+            // ---- LÓGICA DE VENTA (EXISTENTE) ----
+            const calculateStock = (pId) => {
+                if(!pId) return 0;
+                let stock = 0;
+                transactions.forEach(t => {
+                    if (t.productId === pId) {
+                        if (t.type === 'compra') stock += (parseFloat(t.quantity) || 0);
+                        if (t.type === 'venta') stock -= (parseFloat(t.quantity) || 0);
+                    }
+                });
+                return stock;
+            };
+
+            const handleRucChange = (e) => {
+                const ruc = e.target.value;
+                const list = formData.type === 'compra' ? suppliers : clients;
+                const found = list.find(s => s.ruc === ruc);
+                setFormData(prev => ({ ...prev, rucInput: ruc, client: found ? found.name : '' }));
+                setIsNewEntity(!found && ruc.length > 5);
+            };
+
+            const handleRegisterEntity = () => {
+                let name = formData.client;
+                if (!name) {
+                     name = prompt(`Ingrese Razón Social para RUC ${formData.rucInput}:`);
+                }
+                if (!name) return;
+                
+                const newData = { name, ruc: formData.rucInput, contact: '' };
+                if (formData.type === 'compra') {
+                    onRegisterSupplier(newData);
+                } else {
+                    onRegisterClient(newData);
+                }
+                setFormData(prev => ({ ...prev, client: name }));
+                setIsNewEntity(false);
+            };
+
+            const handleCodeChange = (e) => {
+                const code = e.target.value;
+                const found = products.find(p => p.code.toLowerCase() === code.toLowerCase());
+                if (found) {
+                    fillProductData(found);
+                } else {
+                    setFormData(prev => ({...prev, codeInput: code, description: '', productId: null}));
+                    setStockDisplay(null);
+                    setPurchaseBatches([]);
+                    setReferenceCost(0);
+                }
+            };
+
+            const handleDescriptionChange = (e) => {
+                const desc = e.target.value;
+                const found = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+                if (found) {
+                    fillProductData(found);
+                } else {
+                    setFormData(prev => ({ ...prev, description: desc }));
+                }
+            };
+
+            const fillProductData = (found) => {
+                const price = parseFloat(found.price);
+                const cost = parseFloat(found.cost) || 0;
+                
+                const batches = transactions.filter(t => t.type === 'compra' && t.productId === found.id);
+                setPurchaseBatches(batches);
+                const currentStock = calculateStock(found.id);
+                setStockDisplay(currentStock);
+                
+                setFormData(prev => ({ 
+                    ...prev, 
+                    codeInput: found.code, 
+                    description: found.name, 
+                    productId: found.id, 
+                    unitPrice: price 
+                }));
+                setReferenceCost(cost);
+                updateCalculations(formData.quantity, price);
+            }
+
+            const handleBatchSelect = (e) => {
+                const batchId = parseInt(e.target.value);
+                const batch = purchaseBatches.find(b => b.id === batchId);
+                if (batch) {
+                    const costPrice = parseFloat(batch.unitPrice) || 0; 
+                    setFormData(prev => ({ ...prev, linkedInvoice: batch.invoice, linkedSupplier: batch.client }));
+                    setReferenceCost(costPrice); 
+                }
+            };
+
+            const handleTotalChange = (e) => {
+                const total = parseFloat(e.target.value) || 0;
+                const qty = formData.quantity || 1;
+                const base = total / 1.18;
+                const tax = total - base;
+                const unitPrice = total / qty; 
+                setFormData(prev => ({ ...prev, amount: total, subtotal: base, tax: tax, unitPrice: unitPrice }));
+            };
+
+            const updateCalculations = (qty, price) => {
+                const total = qty * price;
+                const base = total / 1.18;
+                const tax = total - base;
+                setFormData(prev => ({ ...prev, quantity: qty, unitPrice: price, subtotal: base, tax: tax, amount: total }));
+            };
+
+            const marginAmount = formData.unitPrice - referenceCost;
+            const marginPercent = referenceCost > 0 ? ((marginAmount / referenceCost) * 100).toFixed(1) : 0;
+
+            const handleSaveNewProduct = (item) => {
+                if(!item.code || !item.description) return;
+                onRegisterProduct({
+                    code: item.code,
+                    name: item.description,
+                    cost: item.unitCost,
+                    price: item.sellingPrice
+                });
+                alert("Producto guardado en catálogo");
+                // Forzar re-render o actualizar item con productId si es necesario
+            };
+
+            // ---- SUBMIT UNIFICADO ----
+            const handleFinalSubmit = (e) => {
+                e.preventDefault();
+                
+                if (formData.type === 'compra') {
+                    if (purchaseItems.length === 0) {
+                        alert("Agrega al menos un producto a la lista de compra.");
+                        return;
+                    }
+
+                    // VALIDATION START
+                    // Check if there are any products that haven't been saved to the catalog yet.
+                    const unknownProducts = purchaseItems.filter(item => {
+                        // Check if it has an ID attached (saved in this session) OR if the code exists in the main product list
+                        const existsInCatalog = products.some(p => p.code === item.code);
+                        return !item.productId && !existsInCatalog;
+                    });
+
+                    if (unknownProducts.length > 0) {
+                        alert(`Hay ${unknownProducts.length} producto(s) nuevos que no han sido guardados en el catálogo. Por favor, haz clic en el icono de guardar (disco) junto al nombre del producto.`);
+                        return;
+                    }
+                    // VALIDATION END
+
+                    const batchTransactions = purchaseItems.map(item => ({
+                        type: 'compra',
+                        category: CATEGORIAS.compra[0],
+                        date: formData.date,
+                        invoice: formData.invoice,
+                        client: formData.client,
+                        rucInput: formData.rucInput,
+                        description: item.description || 'Producto sin nombre',
+                        quantity: item.quantity,
+                        unitPrice: item.unitCost, 
+                        amount: item.subtotal,
+                        productId: item.productId, // Si se guardó como nuevo, esto puede ser null aquí si no recargamos, pero el nombre y código están. Idealmente el registro actualiza el estado products y deberíamos buscar de nuevo.
+                        sellingPrice: item.sellingPrice,
+                        codeInput: item.code,
+                        paymentStatus: formData.paymentStatus // Agregar estado de pago
+                    }));
+                    
+                    // Pequeña corrección: si es producto nuevo y no tiene ID, buscarlo por código (por si se acaba de guardar)
+                    const finalTransactions = batchTransactions.map(t => {
+                        if (!t.productId) {
+                            const p = products.find(prod => prod.code === t.codeInput);
+                            if (p) t.productId = p.id;
+                        }
+                        return t;
+                    });
+
+                    onSubmit(finalTransactions); 
+                } else {
+                    if(formData.description && formData.amount) {
+                        onSubmit({...formData, amount: parseFloat(formData.amount)});
+                    }
+                }
+            };
+
+            return (
+                <form onSubmit={handleFinalSubmit} className="space-y-5">
+                    
+                    {/* DATALISTS PARA AUTOCOMPLETADO */}
+                    <datalist id="list-products-code">
+                        {products.map(p => <option key={p.id} value={p.code}>{p.name}</option>)}
+                    </datalist>
+                    <datalist id="list-products-name">
+                        {products.map(p => <option key={p.id} value={p.name}>{p.code}</option>)}
+                    </datalist>
+                    <datalist id="list-clients">
+                        {clients.map(c => <option key={c.id} value={c.ruc}>{c.name}</option>)}
+                    </datalist>
+                    <datalist id="list-suppliers">
+                        {suppliers.map(s => <option key={s.id} value={s.ruc}>{s.name}</option>)}
+                    </datalist>
+
+                    {/* TIPO DE OPERACIÓN */}
+                    <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-full sm:w-fit mb-4">
+                        {['venta', 'compra', 'gasto'].map(t => (
+                            <button key={t} type="button" onClick={() => handleTypeChange({target: {value: t}})}
+                                className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold capitalize transition-all ${formData.type === t ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* --- COMPRAS (NUEVA INTERFAZ MULTI-ITEM) --- */}
+                    {formData.type === 'compra' && (
+                        <div className="p-5 rounded-2xl border bg-orange-50 border-orange-100 space-y-5">
+                            {/* CABECERA FACTURA */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div><label className="lbl text-orange-700">Fecha Emisión</label><input type="date" className="input" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} required /></div>
+                                <div><label className="lbl text-orange-700">N° Factura</label><input type="text" className="input" value={formData.invoice} onChange={(e) => setFormData({...formData, invoice: e.target.value})} placeholder="F001-..." /></div>
+                                <div>
+                                    <label className="lbl text-orange-700">RUC Proveedor</label>
+                                    <div className="flex gap-2">
+                                        <div className="relative w-full">
+                                            <input type="text" list="list-suppliers" className="input pr-8" placeholder="RUC..." value={formData.rucInput} onChange={handleRucChange} />
+                                            <div className="absolute right-3 top-3 text-orange-400"><Icons.Search size={16}/></div>
+                                        </div>
+                                        {isNewEntity && <button type="button" onClick={handleRegisterEntity} className="bg-green-500 text-white p-2 rounded-lg"><Icons.Save size={20}/></button>}
+                                    </div>
+                                    <div className="text-xs text-orange-600 mt-1 font-bold">{formData.client || '-'}</div>
+                                </div>
+                            </div>
+
+                             {/* PAGO A CRÉDITO - NUEVO */}
+                             <div className="flex items-center gap-2 bg-orange-100/50 p-2 rounded-lg w-fit">
+                                <input 
+                                    type="checkbox" 
+                                    id="credit-check-compra"
+                                    className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                                    checked={formData.paymentStatus === 'pendiente'}
+                                    onChange={(e) => setFormData({...formData, paymentStatus: e.target.checked ? 'pendiente' : 'pagado'})}
+                                />
+                                <label htmlFor="credit-check-compra" className="text-sm font-bold text-orange-800 flex items-center gap-1 cursor-pointer">
+                                    <Icons.CreditCard size={16}/> Pago Pendiente / Crédito
+                                </label>
+                            </div>
+
+                            {/* LISTA DE PRODUCTOS */}
+                            <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
+                                <div className="p-3 bg-orange-100 border-b border-orange-200 flex justify-between items-center">
+                                    <h3 className="font-bold text-orange-800 text-sm flex gap-2"><Icons.ClipboardList size={18}/> Detalle de Compra</h3>
+                                    <button type="button" onClick={addPurchaseItem} className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex gap-1 items-center transition-colors">
+                                        <Icons.PlusCircle size={16}/> Agregar Producto
+                                    </button>
+                                </div>
+                                
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                                            <tr>
+                                                <th className="px-3 py-2 w-24">Código</th>
+                                                <th className="px-3 py-2">Producto</th>
+                                                <th className="px-3 py-2 w-20 text-center">Cant.</th>
+                                                <th className="px-3 py-2 w-24 text-right">Costo Unit.</th>
+                                                <th className="px-3 py-2 w-20 text-center text-blue-600">Margen %</th>
+                                                <th className="px-3 py-2 w-24 text-right text-blue-600">Precio Sugerido</th>
+                                                <th className="px-3 py-2 w-24 text-right font-bold">Subtotal</th>
+                                                <th className="px-3 py-2 w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {purchaseItems.map((item, idx) => {
+                                                const isKnownProduct = products.some(p => p.code === item.code);
+                                                return (
+                                                <tr key={item.id} className="animate-slide-down">
+                                                    <td className="p-2"><input type="text" list="list-products-code" className="input text-xs p-1" placeholder="Cod" value={item.code} onChange={(e) => updatePurchaseItem(item.id, 'code', e.target.value)} /></td>
+                                                    <td className="p-2">
+                                                        <div className="flex gap-1">
+                                                            <input type="text" list="list-products-name" className="input text-xs p-1 w-full" placeholder="Nombre" value={item.description} onChange={(e) => updatePurchaseItem(item.id, 'description', e.target.value)} />
+                                                            {!isKnownProduct && item.code && item.description && (
+                                                                <button type="button" onClick={() => handleSaveNewProduct(item)} className="text-green-600 hover:text-green-800" title="Guardar Nuevo Producto">
+                                                                    <Icons.Save size={18}/>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-2"><input type="number" className="input text-xs p-1 text-center" value={item.quantity} onChange={(e) => updatePurchaseItem(item.id, 'quantity', e.target.value)} /></td>
+                                                    <td className="p-2"><input type="number" className="input text-xs p-1 text-right" placeholder="0.00" value={item.unitCost} onChange={(e) => updatePurchaseItem(item.id, 'unitCost', e.target.value)} /></td>
+                                                    
+                                                    {/* SECCIÓN MARGEN */}
+                                                    <td className="p-2 bg-blue-50/50"><input type="number" className="input text-xs p-1 text-center border-blue-200 text-blue-700 font-bold" value={item.margin} onChange={(e) => updatePurchaseItem(item.id, 'margin', e.target.value)} /></td>
+                                                    <td className="p-2 bg-blue-50/50 text-right text-blue-700 font-bold text-xs pt-3">{item.sellingPrice.toFixed(2)}</td>
+                                                    
+                                                    <td className="p-2 text-right font-bold text-slate-700 pt-3">{item.subtotal.toFixed(2)}</td>
+                                                    <td className="p-2 text-center"><button type="button" onClick={() => removePurchaseItem(item.id)} className="text-red-400 hover:text-red-600"><Icons.X size={16}/></button></td>
+                                                </tr>
+                                            )})}
+                                            {purchaseItems.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-slate-400 text-xs italic">Presiona "+ Agregar Producto" para comenzar</td></tr>}
+                                        </tbody>
+                                        {purchaseItems.length > 0 && (
+                                            <tfoot className="bg-orange-50 font-bold text-orange-900">
+                                                <tr>
+                                                    <td colSpan="6" className="p-3 text-right">TOTAL COMPRA:</td>
+                                                    <td className="p-3 text-right text-lg">{calculatePurchaseTotal().toFixed(2)}</td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
+                                        )}
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- VENTA (INDIVIDUAL) --- */}
+                    {formData.type === 'venta' && (
+                        <div className="p-5 rounded-2xl border bg-blue-50 border-blue-100 space-y-5">
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                                <div className="sm:col-span-3"><label className="lbl">Fecha</label><input type="date" className="input" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} required /></div>
+                                <div className="sm:col-span-3"><label className="lbl">Factura o Boleta</label><input type="text" className="input" value={formData.invoice} onChange={(e) => setFormData({...formData, invoice: e.target.value})} /></div>
+                                <div className="sm:col-span-3">
+                                    <label className="lbl text-blue-700">DNI / RUC Cliente</label>
+                                    <div className="relative"><input type="text" list="list-clients" className="input pr-8" value={formData.rucInput} onChange={handleRucChange} /><div className="absolute right-3 top-3 opacity-50"><Icons.Search size={16}/></div></div>
+                                </div>
+                                <div className="sm:col-span-3">
+                                    <label className="lbl text-blue-700">Razón Social</label>
+                                    <div className="flex gap-2"><input type="text" className="input bg-white/50" value={formData.client} onChange={(e) => setFormData({...formData, client: e.target.value})} />{isNewEntity && <button type="button" onClick={handleRegisterEntity} className="bg-green-500 text-white p-2 rounded-lg"><Icons.Save size={20}/></button>}</div>
+                                </div>
+                            </div>
+                            <hr className="border-dashed border-blue-200" />
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                                <div className="sm:col-span-3"><label className="lbl">Código</label><div className="relative"><input type="text" list="list-products-code" className="input pr-8" value={formData.codeInput} onChange={handleCodeChange} /><div className="absolute right-3 top-3 opacity-50"><Icons.Search size={16}/></div></div></div>
+                                <div className="sm:col-span-5"><label className="lbl">Producto</label><input type="text" list="list-products-name" className="input bg-white/50" value={formData.description} onChange={handleDescriptionChange} /></div>
+                                <div className="sm:col-span-2"><label className="lbl">Stock</label><div className={`input text-center font-bold ${stockDisplay <= 0 ? 'text-red-500 bg-red-50' : 'text-slate-700 bg-slate-100'}`}>{stockDisplay !== null ? stockDisplay : '-'}</div></div>
+                                <div className="sm:col-span-2"><label className="lbl text-blue-700">Lote Origen</label><select className="input text-xs" onChange={handleBatchSelect} defaultValue=""><option value="" disabled>-- --</option>{purchaseBatches.map(b => <option key={b.id} value={b.id}>{b.date} | {b.client} | {b.invoice}</option>)}</select></div>
+                            </div>
+
+                            {/* BARRA DE RENTABILIDAD VISUAL */}
+                            <div className="flex gap-4 p-2 bg-blue-100/50 rounded-lg border border-blue-100 text-xs text-blue-800 font-medium justify-center sm:justify-start">
+                                <div><span className="opacity-60 uppercase">Costo Unitario:</span> S/ {Number(referenceCost).toFixed(2)}</div>
+                                <div className="w-px bg-blue-200 h-4"></div>
+                                <div className={marginAmount >= 0 ? "text-green-600" : "text-red-600"}><span className="opacity-60 uppercase">Margen S/:</span> {marginAmount.toFixed(2)}</div>
+                                <div className="w-px bg-blue-200 h-4"></div>
+                                <div className={marginPercent >= 0 ? "text-green-600 font-bold" : "text-red-600 font-bold"}><span className="opacity-60 uppercase">Margen %:</span> {marginPercent}%</div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm grid grid-cols-2 sm:grid-cols-5 gap-4">
+                                <div><label className="lbl">Cantidad</label><input type="number" className="input text-center font-bold" value={formData.quantity} onChange={(e) => updateCalculations(parseFloat(e.target.value)||0, formData.unitPrice)} /></div>
+                                <div><label className="lbl">Precio Unit.</label><input type="number" step="0.01" className="input text-right" value={formData.unitPrice.toFixed(2)} onChange={(e) => updateCalculations(formData.quantity, parseFloat(e.target.value)||0)} /></div>
+                                <div><label className="lbl">Sub Total</label><input type="text" className="input text-right bg-slate-50 text-slate-500" value={formData.subtotal.toFixed(2)} readOnly /></div>
+                                <div><label className="lbl">IGV (18%)</label><input type="text" className="input text-right bg-slate-50 text-slate-500" value={formData.tax.toFixed(2)} readOnly /></div>
+                                <div className="col-span-2 sm:col-span-1"><label className="lbl text-blue-600">TOTAL</label><input type="number" step="0.01" className="input text-right font-black text-lg text-blue-600 border-blue-200 bg-blue-50 focus:bg-white" value={formData.amount} onChange={handleTotalChange} placeholder="0.00"/></div>
+                            </div>
+
+                            {/* PAGO A CRÉDITO - NUEVO */}
+                            <div className="flex items-center gap-2 bg-blue-100/50 p-2 rounded-lg w-fit">
+                                <input 
+                                    type="checkbox" 
+                                    id="credit-check-venta"
+                                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    checked={formData.paymentStatus === 'pendiente'}
+                                    onChange={(e) => setFormData({...formData, paymentStatus: e.target.checked ? 'pendiente' : 'pagado'})}
+                                />
+                                <label htmlFor="credit-check-venta" className="text-sm font-bold text-blue-800 flex items-center gap-1 cursor-pointer">
+                                    <Icons.CreditCard size={16}/> Pago Pendiente (Crédito)
+                                </label>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- GASTO (INDIVIDUAL) --- */}
+                    {formData.type === 'gasto' && (
+                        <div className="p-5 rounded-2xl border bg-red-50 border-red-100 space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div><label className="lbl text-red-700">Concepto</label><select className="input border-red-200 focus:ring-red-200" onChange={(e) => {const item = shoppingItems.find(i => i.id === parseInt(e.target.value)); if(item) setFormData({...formData, description: item.name, amount: item.price});}} defaultValue=""><option value="" disabled>-- Seleccionar --</option>{shoppingItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+                                <div><label className="lbl text-red-700">Descripción</label><input type="text" className="input" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} /></div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div><label className="lbl">Fecha</label><input type="date" className="input" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} /></div>
+                                <div><label className="lbl">Total</label><input type="number" className="input text-right font-bold" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} /></div>
+                                <div className="flex items-center pt-5">
+                                    <div className="flex items-center gap-2 bg-red-100/50 p-2 rounded-lg w-full justify-center">
+                                        <input 
+                                            type="checkbox" 
+                                            id="credit-check-gasto"
+                                            className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                                            checked={formData.paymentStatus === 'pendiente'}
+                                            onChange={(e) => setFormData({...formData, paymentStatus: e.target.checked ? 'pendiente' : 'pagado'})}
+                                        />
+                                        <label htmlFor="credit-check-gasto" className="text-sm font-bold text-red-800 cursor-pointer">
+                                            Por Pagar
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <button className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 rounded-xl shadow-lg shadow-slate-200 transition-all active:scale-95 flex justify-center items-center gap-2 text-lg">
+                        <Icons.PlusCircle size={24} /> Registrar Operación
+                    </button>
+                    
+                    <style>{`
+                        .lbl { display: block; font-size: 0.7rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 0.35rem; letter-spacing: 0.05em; }
+                        .input { width: 100%; border-radius: 0.75rem; border: 1px solid #cbd5e1; padding: 0.6rem 0.8rem; font-size: 0.9rem; outline: none; transition: all 0.2s; }
+                        .input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+                    `}</style>
+                </form>
+            );
+        }
+
+        function ProductTable({ products, transactions, calculateStock, formatMoney, onDelete }) {
+            return (
+                <div className="w-full">
+                    {/* VISTA MÓVIL: TARJETAS */}
+                    <div className="grid grid-cols-1 gap-4 sm:hidden">
+                        {products.length === 0 ? (
+                            <div className="p-8 text-center text-slate-400 text-xs italic bg-white rounded-lg border border-slate-200">
+                                No hay productos registrados
+                            </div>
+                        ) : (
+                            products.map(i => {
+                                const stock = calculateStock(i.id);
+                                const cost = parseFloat(i.cost) || 0;
+                                const price = parseFloat(i.price) || 0;
+                                let margin = 0;
+                                if (cost > 0) margin = ((price - cost) / cost) * 100;
+
+                                return (
+                                    <div key={i.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-3">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <div className="font-bold text-slate-800 text-lg">{i.name}</div>
+                                                <div className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded w-fit">{i.code || '-'}</div>
+                                            </div>
+                                            <button onClick={() => onDelete(i.id)} className="text-slate-300 hover:text-red-500 p-1">
+                                                <Icons.Trash2 size={20} />
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4 border-t border-slate-50 pt-3">
+                                            <div>
+                                                <div className="text-xs text-slate-400 uppercase font-bold">Precio Final</div>
+                                                <div className="text-blue-600 font-bold text-lg">{price ? formatMoney(price) : '-'}</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-xs text-slate-400 uppercase font-bold">Stock</div>
+                                                <div className={`font-bold text-lg ${stock <= 3 ? 'text-amber-600' : 'text-slate-700'}`}>{stock}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-between items-center text-xs pt-1">
+                                            <div className="text-slate-500">Costo: {cost ? formatMoney(cost) : '-'}</div>
+                                            <span className={`px-2 py-1 rounded font-bold ${margin >= 30 ? 'bg-green-100 text-green-700' : (margin > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500')}`}>
+                                                Margen: {margin > 0 ? margin.toFixed(1) + '%' : '-'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* VISTA DESKTOP: TABLA (oculta en móviles) */}
+                    <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold">
+                                <tr>
+                                    <th className="px-6 py-3">Código</th>
+                                    <th className="px-6 py-3">Producto</th>
+                                    <th className="px-6 py-3 text-center text-blue-600">Margen %</th>
+                                    <th className="px-6 py-3 text-right">Precio Final</th>
+                                    <th className="px-6 py-3 text-right">Stock</th>
+                                    <th className="px-6 py-3 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {products.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-xs uppercase font-bold">Sin datos</td></tr> : 
+                                products.map(i => {
+                                    const stock = calculateStock(i.id);
+                                    // Cálculo de margen seguro
+                                    const cost = parseFloat(i.cost) || 0;
+                                    const price = parseFloat(i.price) || 0;
+                                    let margin = 0;
+                                    if (cost > 0) {
+                                        margin = ((price - cost) / cost) * 100;
+                                    }
+                                    
+                                    return (
+                                    <tr key={i.id} className="hover:bg-slate-50">
+                                        <td className="px-6 py-3 font-mono text-slate-500 text-xs whitespace-nowrap">{i.code || '-'}</td>
+                                        <td className="px-6 py-3 font-medium text-slate-700 whitespace-nowrap">{i.name}</td>
+                                        
+                                        {/* Columna Margen */}
+                                        <td className="px-6 py-3 text-center font-bold text-xs whitespace-nowrap">
+                                            <span className={`px-2 py-1 rounded ${margin >= 30 ? 'bg-green-100 text-green-700' : (margin > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500')}`}>
+                                                {margin > 0 ? margin.toFixed(1) + '%' : '-'}
+                                            </span>
+                                        </td>
+
+                                        {/* Columna Precio Final */}
+                                        <td className="px-6 py-3 text-right text-slate-700 font-bold font-mono whitespace-nowrap">
+                                            {price ? formatMoney(price) : '-'}
+                                            {cost > 0 && <div className="text-[10px] text-slate-400 font-normal">Costo: {formatMoney(cost)}</div>}
+                                        </td>
+                                        
+                                        <td className="px-6 py-3 text-right font-bold font-mono whitespace-nowrap">{stock}</td>
+                                        <td className="px-6 py-3 text-center whitespace-nowrap"><button onClick={() => onDelete(i.id)} className="text-slate-300 hover:text-red-500"><Icons.Trash2 /></button></td>
+                                    </tr>
+                                )})}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // Componentes de Tablas y Formularios Simples
+        function SimpleForm({ fields, onSubmit, btnLabel, btnColor = "bg-blue-600 hover:bg-blue-700", initialData, onCancel }) {
+            const [data, setData] = useState(fields.reduce((acc, f) => ({...acc, [f.name]: ''}), {}));
+            
+            // Effect to populate form when initialData changes (for editing)
+            useEffect(() => {
+                if (initialData) {
+                    setData(initialData);
+                } else {
+                    // Reset to empty if no initialData (switching back to 'add' mode)
+                    setData(fields.reduce((acc, f) => ({...acc, [f.name]: ''}), {}));
+                }
+            }, [initialData, fields]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                // Validar que al menos un campo de texto tenga valor (para que no guarde vacíos)
+                const hasValue = fields.some(f => f.type === 'text' && data[f.name]);
+                if(hasValue) { 
+                    const formatted = { ...data };
+                    fields.forEach(f => {
+                        if(f.type === 'number') formatted[f.name] = parseFloat(data[f.name]) || 0;
+                    });
+                    onSubmit(formatted); 
+                    if (!initialData) {
+                        setData(fields.reduce((acc, f) => ({...acc, [f.name]: ''}), {})); 
+                    }
+                }
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    {fields.map(f => (
+                        <div key={f.name}>
+                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">{f.label}</label>
+                            <input type={f.type} step="0.01" className="w-full rounded-lg border-slate-200 border p-2 text-sm outline-none focus:border-blue-500" value={data[f.name]} onChange={(e) => setData({...data, [f.name]: e.target.value})} />
+                        </div>
+                    ))}
+                    <div className="flex gap-2">
+                        <button type="submit" className={`flex-1 ${btnColor} text-white font-bold py-2 rounded-lg text-sm shadow-md transition-all`}>{btnLabel}</button>
+                        {onCancel && (
+                            <button type="button" onClick={onCancel} className="bg-slate-200 text-slate-600 font-bold py-2 px-3 rounded-lg text-sm hover:bg-slate-300">
+                                Cancelar
+                            </button>
+                        )}
+                    </div>
+                </form>
+            );
+        }
+
+        function SimpleTable({ data, columns, formatMoney, onDelete }) {
+            // Este componente ahora se usa para Shopping items mayormente, ya que ProductTable es específico
+            const isProductTable = columns.length === 4; 
+            return (
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold">
+                        <tr>
+                            <th className="px-6 py-3 whitespace-nowrap">{columns[0]}</th>
+                            <th className="px-6 py-3 whitespace-nowrap">{columns[1]}</th>
+                            {columns[2] && <th className="px-6 py-3 text-right whitespace-nowrap">{columns[2]}</th>}
+                            <th className="px-6 py-3 text-center whitespace-nowrap"></th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {data.length === 0 ? <tr><td colSpan={columns.length + 1} className="p-8 text-center text-slate-400 text-xs uppercase font-bold">Sin datos</td></tr> : 
+                        data.map(i => (
+                            <tr key={i.id} className="hover:bg-slate-50">
+                                <td className="px-6 py-3 font-mono text-slate-500 text-xs whitespace-nowrap">{i.code || '-'}</td>
+                                <td className="px-6 py-3 font-medium text-slate-700 whitespace-nowrap">{i.name}</td>
+                                {columns[2] && <td className="px-6 py-3 text-right text-slate-500 font-mono whitespace-nowrap">{formatMoney ? formatMoney(i.price || i.cost || 0) : (i.price || i.cost || 0)}</td>}
+                                <td className="px-6 py-3 text-center whitespace-nowrap"><button onClick={() => onDelete(i.id)} className="text-slate-300 hover:text-red-500"><Icons.Trash2 /></button></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                </div>
+            );
+        }
+
+        function ContactTable({ data, onDelete, onEdit }) {
+            return (
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold"><tr><th className="px-6 py-3 whitespace-nowrap">Nombre</th><th className="px-6 py-3 whitespace-nowrap">RUC</th><th className="px-6 py-3 whitespace-nowrap">Contacto</th><th className="px-6 py-3 whitespace-nowrap"></th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {data.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-slate-400 text-xs uppercase font-bold">Sin registros</td></tr> : 
+                        data.map(i => (
+                            <tr key={i.id} className="hover:bg-slate-50">
+                                <td className="px-6 py-3 font-medium text-slate-700 whitespace-nowrap">{i.name}</td>
+                                <td className="px-6 py-3 text-slate-500 whitespace-nowrap">{i.ruc || '-'}</td>
+                                <td className="px-6 py-3 text-slate-500 whitespace-nowrap">{i.contact || '-'}</td>
+                                <td className="px-6 py-3 text-center flex justify-center gap-2 whitespace-nowrap">
+                                    {onEdit && (
+                                        <button onClick={() => onEdit(i)} className="text-slate-300 hover:text-blue-500 transition-colors p-1" title="Editar">
+                                            <Icons.Edit size={16} />
+                                        </button>
+                                    )}
+                                    <button onClick={() => onDelete(i.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1" title="Eliminar">
+                                        <Icons.Trash2 size={16} />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                </div>
+            );
+        }
+
+        function TransactionTable({ transactions, formatMoney, onDelete }) {
+            const getBadge = (t) => {
+                if(t.type === 'venta') return <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase border border-green-200">Venta</span>;
+                if(t.type === 'compra') return <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-bold uppercase border border-orange-200">Compra</span>;
+                return <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold uppercase border border-red-200">Gasto</span>;
+            }
+            return (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left whitespace-nowrap">
+                        <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold">
+                            <tr><th className="px-6 py-3 whitespace-nowrap">Doc / Producto</th><th className="px-6 py-3 whitespace-nowrap">Detalle</th><th className="px-6 py-3 whitespace-nowrap">Fecha</th><th className="px-6 py-3 text-right whitespace-nowrap">P. Unit.</th><th className="px-6 py-3 text-right whitespace-nowrap">Total</th><th className="px-6 py-3 text-center whitespace-nowrap"></th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {transactions.length === 0 ? <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold uppercase text-xs">Sin movimientos</td></tr> :
+                            transactions.map(t => (
+                                <tr key={t.id} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 whitespace-nowrap">
+                                        <div className="font-bold text-slate-700">{t.description}</div>
+                                        <div className="text-xs text-slate-500 mt-1 flex gap-2 items-center">
+                                            {t.invoice ? <span className="bg-slate-200 px-1.5 rounded text-slate-600 font-mono">#{t.invoice}</span> : <span className="italic text-slate-300">S/N</span>}
+                                            {t.quantity > 1 && <span className="text-blue-600 font-bold">x{t.quantity}</span>}
+                                            {t.codeInput && <span className="text-slate-400 font-mono">[{t.codeInput}]</span>}
+                                        </div>
+                                        {t.linkedSupplier && <div className="mt-1 flex items-center gap-1 text-xs text-orange-600 font-medium bg-orange-50 px-1.5 py-0.5 rounded w-fit"><Icons.Shield size={12} /> Garantía: {t.linkedSupplier} {t.linkedInvoice ? `(Fac: ${t.linkedInvoice})` : ''}</div>}
+                                    </td>
+                                    <td className="px-6 py-3 whitespace-nowrap">
+                                        <div className="flex flex-col">
+                                            <div className="mb-1">{getBadge(t)}</div>
+                                            {t.client && <span className="text-xs text-slate-500">👤 {t.client} {t.rucInput ? `(${t.rucInput})` : ''}</span>}
+                                            {t.paymentStatus === 'pendiente' && <span className="text-[10px] text-red-500 font-bold uppercase border border-red-200 px-1 rounded w-fit mt-1">Pendiente</span>}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-3 text-slate-500 font-mono text-xs whitespace-nowrap">{t.date}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-slate-500 text-xs whitespace-nowrap">{t.unitPrice ? formatMoney(t.unitPrice) : '-'}</td>
+                                    <td className={`px-6 py-3 text-right font-bold font-mono whitespace-nowrap ${t.type === 'venta' ? 'text-green-600' : 'text-slate-700'}`}>{t.type === 'venta' ? '+' : '-'}{formatMoney(t.amount)}</td>
+                                    <td className="px-6 py-3 text-center whitespace-nowrap"><button onClick={() => onDelete(t.id)} className="text-slate-300 hover:text-red-500"><Icons.Trash2 /></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('accounting-app-root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
